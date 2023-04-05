@@ -1,0 +1,91 @@
+trigger RenewalTrigger on Opportunity (After insert,After Update) {
+    
+    if(trigger.isafter && trigger.isupdate){
+        
+        RenewalHandler.updateRenewalOpportunities(trigger.new, trigger.oldmap);
+    }
+}
+
+****************************************************** Handler Class of Opp Trigger ******************************
+/**
+ * This class handles the renewal of opportunities by creating a new opportunity and
+ * cloning the line items of the original opportunity, excluding the Installation Fee line item.
+ * The new opportunity is assigned a renewal record type and set to the Renewal stage.
+ * The opportunity can only be closed and cloned if it has an Installation Fee line item.
+ */
+public class RenewalHandler {   
+    public static void updateRenewalOpportunities(List<Opportunity> newOpportunities, Map<Id, Opportunity> oldOpportunities) {
+        if (!Schema.SObjectType.Opportunity.isUpdateable()) { // Check if the Opportunity object is updateable, if not, return
+            return;
+        }
+        try {// Begin a try-catch block
+            List<Opportunity> updateOpportunities = new List<Opportunity>();// Create a new empty list of Opportunities called updateOpportunities
+            Set<Id> originalIds = oldOpportunities.keySet();// Create a new set of Ids called originalIds and populate it with the keys of the oldOpportunities map
+            Set<Id> opportunitiesWithInstallationFee = new Set<Id>(); // Create a new empty set of Ids called opportunitiesWithInstallationFee               
+            Map<Id, Opportunity> renewalOpportunities = new Map<Id, Opportunity>(); // Create a new empty map of Ids and Opportunities called renewalOpportunities
+            String newBusinessRecordTypeId = Schema.SObjectType.Opportunity.getRecordTypeInfosByName().get('New Business').getRecordTypeId(); // Get the record type ID of opportunities with the name "New Business"
+            String renewalRecordTypeId = Schema.SObjectType.Opportunity.getRecordTypeInfosByName().get('Renewal').getRecordTypeId(); // Get the record type ID of opportunities with the name "Renewal"
+            
+            // Get the original opportunities with InstallationFee
+            for (OpportunityLineItem lineItem : [SELECT OpportunityId FROM OpportunityLineItem WHERE OpportunityId = :originalIds AND PricebookEntry.Product2.Name = 'Installation fee']) { // Query for OpportunityLineItems where the OpportunityId is in originalIds and the Product2 Name is "Installation fee"
+                opportunitiesWithInstallationFee.add(lineItem.OpportunityId); // Add the OpportunityId of each returned OpportunityLineItem to the opportunitiesWithInstallationFee set
+            }
+    
+            for (Opportunity newOpportunity : newOpportunities) { // Loop through each new opportunity in the newOpportunities list
+                Opportunity oldOpportunity = oldOpportunities.get(newOpportunity.Id); // Get the corresponding old opportunity from the oldOpportunities map using the Id of the new opportunity
+                
+                // Check if the StageName of the new opportunity is different from the old opportunity, and if the record type is "New Business", and if the StageName is "Closed Won"
+                if (newOpportunity.StageName != oldOpportunity.StageName && newOpportunity.RecordTypeId == newBusinessRecordTypeId && newOpportunity.StageName == 'Closed Won') {
+                    if (opportunitiesWithInstallationFee.contains(newOpportunity.Id)) { // Check if the opportunitiesWithInstallationFee set contains the Id of the new opportunity
+                        Opportunity clonedOpportunity = newOpportunity.clone(); // Create a new cloned Opportunity from the new opportunity
+                        clonedOpportunity.RecordTypeId = renewalRecordTypeId; // Set the record type ID of the cloned Opportunity to "Renewal"
+                        clonedOpportunity.StageName = 'Renewal'; // Set the StageName of the cloned Opportunity to "Renewal"
+                        clonedOpportunity.Name = newOpportunity.Name + '-Renewal'; // Set the Name of the cloned Opportunity to the Name of the new opportunity with "-Renewal" appended
+
+                        clonedOpportunity.CloseDate = newOpportunity.CloseDate.addDays(30);
+                        clonedOpportunity.Parent_Opportunity__c = newOpportunity.Id;
+                        updateOpportunities.add(clonedOpportunity);
+                        renewalOpportunities.put(newOpportunity.Id, clonedOpportunity);
+                    } else {
+                        newOpportunity.addError('Before closing this new business opportunity, An InstallationFee Product needs to be added to it');
+                    }
+                }
+                if (newOpportunity.StageName != oldOpportunity.StageName && newOpportunity.RecordTypeId == renewalRecordTypeId && newOpportunity.StageName=='Closed Won') {
+                    Opportunity clonedOpportunity = newOpportunity.clone();
+                    clonedOpportunity.RecordTypeId = renewalRecordTypeId;
+                    clonedOpportunity.StageName = 'Renewal';
+                    clonedOpportunity.Name = newOpportunity.Name + '-Renewal';
+                    clonedOpportunity.CloseDate = newOpportunity.CloseDate.addDays(30);
+                    clonedOpportunity.Parent_Opportunity__c = newOpportunity.Id;
+                    updateOpportunities.add(clonedOpportunity);
+                    renewalOpportunities.put(newOpportunity.Id, clonedOpportunity);
+                }
+            }
+    
+            if (!updateOpportunities.isEmpty()) {
+                database.insert(updateOpportunities);
+            }
+    
+            List<OpportunityLineItem> clonedLineItems = new List<OpportunityLineItem>();
+            if (!updateOpportunities.isEmpty()) {
+                List<OpportunityLineItem> originalLineItems = [SELECT Id, PricebookEntryId, Quantity, UnitPrice, PricebookEntry.Product2.Name, OpportunityId FROM OpportunityLineItem WHERE OpportunityId = :originalIds];
+                for (OpportunityLineItem originalLineItem : originalLineItems) {
+                       
+                        if (originalLineItem.PricebookEntry.Product2.Name != 'Installation fee') { // exclude the installation fee product
+                            OpportunityLineItem clonedLineItem = originalLineItem.clone();
+                            clonedLineItem.OpportunityId = renewalOpportunities.get(originalLineItem.OpportunityId).Id;
+                            clonedLineItems.add(clonedLineItem);
+                        }
+                    }
+                }
+        
+                //Check list of ClonedLineItems then insert
+                if (!clonedLineItems.isEmpty()) {
+                    database.insert(clonedLineItems);
+                }
+        
+            } catch (Exception ex) {
+                system.debug('Error Occur : ' + ex.getMessage());
+            }
+        }
+	}
