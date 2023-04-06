@@ -28,10 +28,11 @@ public class RenewalHandler {
             
             // Get the original opportunities with InstallationFee
             for (OpportunityLineItem lineItem : [SELECT OpportunityId FROM OpportunityLineItem WHERE OpportunityId = :originalIds AND PricebookEntry.Product2.Name = 'Installation fee']) { // Query for OpportunityLineItems where the OpportunityId is in originalIds and the Product2 Name is "Installation fee"
-           if(lineItem.OpportunityId !=null){
+                if(lineItem.OpportunityId !=null){
                   opportunitiesWithInstallationFee.add(lineItem.OpportunityId); // Add the OpportunityId of each returned OpportunityLineItem to the opportunitiesWithInstallationFee set    
                 }
-	}
+            }
+    
             for (Opportunity newOpportunity : newOpportunities) { // Loop through each new opportunity in the newOpportunities list
                 Opportunity oldOpportunity = oldOpportunities.get(newOpportunity.Id); // Get the corresponding old opportunity from the oldOpportunities map using the Id of the new opportunity
                 
@@ -64,15 +65,29 @@ public class RenewalHandler {
             }
     
             if (!updateOpportunities.isEmpty()) {
-                database.insert(updateOpportunities);
+                Database.SaveResult[] updateOpp = Database.insert(updateOpportunities, false);
+                // Iterate through each returned result
+                for (Database.SaveResult udopp : updateOpp) {
+                    if (udopp.isSuccess()) {
+                        // Operation was successful, so get the ID of the record that was processed
+                        System.debug('Successfully inserted account. Account ID: ' + udopp.getId());
+                    }
+                    else {
+                        // Operation failed, so get all errors                
+                        for(Database.Error err : udopp.getErrors()) {
+                            System.debug('The following error has occurred.');                    
+                            System.debug(err.getStatusCode() + ': ' + err.getMessage());
+                            System.debug('Account fields that affected this error: ' + err.getFields());
+                        }
+                    }
+                }
             }
     
             List<OpportunityLineItem> clonedLineItems = new List<OpportunityLineItem>();
             if (!updateOpportunities.isEmpty()) {
                 List<OpportunityLineItem> originalLineItems = [SELECT Id, PricebookEntryId, Quantity, UnitPrice, PricebookEntry.Product2.Name, OpportunityId FROM OpportunityLineItem WHERE OpportunityId = :originalIds];
                 for (OpportunityLineItem originalLineItem : originalLineItems) {
-		 if(originalLineItem.OpportunityId!=Null){
-                       
+                    if(originalLineItem.OpportunityId!=Null){
                         if (originalLineItem.PricebookEntry.Product2.Name != 'Installation fee') { // exclude the installation fee product
                             OpportunityLineItem clonedLineItem = originalLineItem.clone();
                             clonedLineItem.OpportunityId = renewalOpportunities.get(originalLineItem.OpportunityId).Id;
