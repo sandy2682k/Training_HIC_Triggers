@@ -71,6 +71,7 @@ public class RenewalHandler {
             if (!updateOpportunities.isEmpty()) {
                 List<OpportunityLineItem> originalLineItems = [SELECT Id, PricebookEntryId, Quantity, UnitPrice, PricebookEntry.Product2.Name, OpportunityId FROM OpportunityLineItem WHERE OpportunityId = :originalIds];
                 for (OpportunityLineItem originalLineItem : originalLineItems) {
+		 if(originalLineItem.OpportunityId!=Null){
                        
                         if (originalLineItem.PricebookEntry.Product2.Name != 'Installation fee') { // exclude the installation fee product
                             OpportunityLineItem clonedLineItem = originalLineItem.clone();
@@ -79,7 +80,7 @@ public class RenewalHandler {
                         }
                     }
                 }
-        
+        }
                 //Check list of ClonedLineItems then insert
                 if (!clonedLineItems.isEmpty()) {
                     database.insert(clonedLineItems);
