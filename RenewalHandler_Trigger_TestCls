@@ -28,9 +28,10 @@ public class RenewalHandler {
             
             // Get the original opportunities with InstallationFee
             for (OpportunityLineItem lineItem : [SELECT OpportunityId FROM OpportunityLineItem WHERE OpportunityId = :originalIds AND PricebookEntry.Product2.Name = 'Installation fee']) { // Query for OpportunityLineItems where the OpportunityId is in originalIds and the Product2 Name is "Installation fee"
-                opportunitiesWithInstallationFee.add(lineItem.OpportunityId); // Add the OpportunityId of each returned OpportunityLineItem to the opportunitiesWithInstallationFee set
-            }
-    
+           if(lineItem.OpportunityId !=null){
+                  opportunitiesWithInstallationFee.add(lineItem.OpportunityId); // Add the OpportunityId of each returned OpportunityLineItem to the opportunitiesWithInstallationFee set    
+                }
+	}
             for (Opportunity newOpportunity : newOpportunities) { // Loop through each new opportunity in the newOpportunities list
                 Opportunity oldOpportunity = oldOpportunities.get(newOpportunity.Id); // Get the corresponding old opportunity from the oldOpportunities map using the Id of the new opportunity
                 
